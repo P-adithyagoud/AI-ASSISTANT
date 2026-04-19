@@ -17,7 +17,7 @@ class DataMapper:
 
         # Join possible causes into a single string for legacy UI compatibility
         causes = [
-            f"{c['cause']} ({c['likelihood']} likelihood)" 
+            f"{c.get('cause', 'Unknown')} ({c.get('likelihood', 'N/A')} likelihood)" 
             for c in raw_fallback.get("possible_root_causes", [])
         ]
         root_cause_str = " | ".join(causes) if causes else "Unknown"
