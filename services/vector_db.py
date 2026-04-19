@@ -1,86 +1,79 @@
 import os
-import requests
+import logging
+from typing import Dict, List, Any, Optional
+from hindsight_client import Hindsight
 from config import VECTORIZE_API_KEY, HINDSIGHT_URL
 
-# Optional: Try importing hindsight_client if available
-try:
-    from hindsight_client import Hindsight
-    HINDSIGHT_AVAILABLE = True
-except ImportError:
-    HINDSIGHT_AVAILABLE = False
+# Configure Logging
+logger = logging.getLogger(__name__)
 
 class VectorDBService:
     """
-    Memory Layer: Manages retrieval of historical incidents.
-    Powered by Hindsight (Vectorize.io) with strict fallback logic.
+    Persistence Layer: Interfaces with Hindsight (Vectorize.io) for semantic memory.
+    Handles storage and retrieval of historical incident knowledge.
     """
-    
-    def __init__(self, bank_id="sre-incidents"):
-        self.bank_id = bank_id
-        self.client = None
+
+    def __init__(self):
+        """Initializes the Hindsight client using environment credentials."""
+        self.client = Hindsight(
+            api_key=VECTORIZE_API_KEY,
+            base_url=HINDSIGHT_URL
+        )
+
+    def recall_similar(self, query_text: str, limit: int = 3) -> List[Dict[str, Any]]:
+        """
+        Retrieves top semantically similar incidents from the vector store.
         
-        # We only initialize if keys are present
-        if VECTORIZE_API_KEY and HINDSIGHT_URL and HINDSIGHT_AVAILABLE:
-            try:
-                self.client = Hindsight(base_url=HINDSIGHT_URL, api_key=VECTORIZE_API_KEY)
-            except Exception as e:
-                print(f"Warning: Failed to initialize Hindsight client. {e}")
-
-    def recall_similar(self, query, top_n=3):
-        """
-        Recalls the most relevant past incidents based on a query.
-        Returns an empty list [] if anything fails (Fallback mode).
-        """
-        if not self.client:
-            print("Vector DB client not initialized. Falling back.")
-            return []
-
-        try:
-            results = self.client.recall(bank_id=self.bank_id, query=query)
+        Args:
+            query_text: Normalized incident logs/symptoms.
+            limit: Number of results to return.
             
-            parsed_results = []
-            for item in results[:top_n]:
-                # In typical Hindsight SDK, item could be a dictionary or object. 
-                # Attempt to get metadata safely.
-                item_dict = item if isinstance(item, dict) else vars(item)
-                metadata = item_dict.get("metadata", {}) or {}
-                
-                parsed_results.append({
-                    "issue": item_dict.get("content", metadata.get("issue", "")),
-                    "relevance": item_dict.get("relevance", 0),
-                    "resolution": metadata.get("resolution", item_dict.get("resolution", "Refer to history.")),
-                    "root_cause": metadata.get("root_cause", ""),
-                    "severity": metadata.get("severity", ""),
-                    "tags": metadata.get("tags", [])
+        Returns:
+            A list of matching incident records with relevance scores.
+        """
+        try:
+            logger.info(f"Querying Hindsight for: {query_text[:50]}...")
+            # Use 'recall' method as per hindsight_client API
+            response = self.client.recall(prompt=query_text)
+            
+            formatted = []
+            # Results are in the response object
+            for res in response[:limit]:
+                formatted.append({
+                    "issue": res.document,
+                    "relevance": getattr(res, 'score', 0.8), # Default confidence if score missing
+                    "root_cause": res.metadata.get("root_cause", "Historical context"),
+                    "resolution": res.metadata.get("resolution", "Refer to history"),
+                    "severity": res.metadata.get("severity", "MEDIUM"),
+                    "source": "VECTOR DB"
                 })
-            return parsed_results
+            return formatted
+            
         except Exception as e:
-            print(f"Error recalling memory from Vector DB: {str(e)}. Falling back.")
+            logger.error(f"Hindsight recall failed: {str(e)}")
             return []
 
-    def store_incident(self, embedding, issue, root_cause, resolution, severity, tags):
+    def store_incident(self, embedding: str, issue: str, root_cause: str, resolution: str, severity: str, tags: List[str]) -> bool:
         """
-        Stores a newly generated incident into the Vector DB.
+        Persists a new incident resolution into the vector store.
         """
-        if not self.client:
-            print("Vector DB client not initialized. Cannot store.")
-            return
-
-        print("Storing incident...")
         try:
             metadata = {
-                "issue": str(issue),
-                "root_cause": str(root_cause),
-                "resolution": str(resolution),
-                "severity": str(severity)
+                "root_cause": root_cause,
+                "resolution": resolution,
+                "severity": severity,
+                "tags": tags,
+                "source": "LEARNED_CORE"
             }
-            # Execute store via retain method in Hindsight
-            response = self.client.retain(
-                bank_id=self.bank_id,
-                content=str(embedding),
-                metadata=metadata,
-                tags=list(tags)
+            
+            logger.info(f"Retaining knowledge in Hindsight: {issue[:50]}")
+            # Use 'retain' method as per hindsight_client API
+            self.client.retain(
+                document=f"Incident: {issue}. Root Cause: {root_cause}. Resolution: {resolution}",
+                metadata=metadata
             )
-            print(f"Vector DB Response (Store): {response}")
+            return True
+            
         except Exception as e:
-            print(f"Error storing incident in Vector DB: {e}")
+            logger.error(f"Hindsight retention failed: {str(e)}")
+            return False

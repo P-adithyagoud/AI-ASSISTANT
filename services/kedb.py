@@ -1,64 +1,67 @@
 import json
 import os
+import logging
+from typing import List, Dict, Any
+
+# Configure Logging
+logger = logging.getLogger(__name__)
 
 class LocalKEDBService:
     """
-    Local KEDB Layer: Simulates retrieving "Gold Standard" incidents from a Local JSON file.
+    Legacy Knowledge Layer: Interfaces with the local data/kedb.json.
+    Provides verified gold-standard incident resolutions.
     """
-    
-    def __init__(self, filepath="data/kedb.json"):
-        self.filepath = filepath
-        self.incidents = self._load_data()
 
-    def _load_data(self):
-        if not os.path.exists(self.filepath):
-            print(f"KEDB file {self.filepath} not found.")
-            return []
+    def __init__(self, db_path: str = "data/kedb.json"):
+        """Initializes the service and verifies the KEDB file exists."""
+        self.db_path = db_path
+        if not os.path.exists(self.db_path):
+            logger.warning(f"KEDB file not found at {self.db_path}. Initializing empty store.")
+            self._write_db([])
+
+    def _read_db(self) -> List[Dict[str, Any]]:
+        """Reads the raw KEDB dataset from disk."""
         try:
-            with open(self.filepath, "r", encoding="utf-8") as f:
+            with open(self.db_path, 'r') as f:
                 return json.load(f)
         except Exception as e:
-            print(f"Error loading KEDB data: {e}")
+            logger.error(f"Error reading KEDB: {str(e)}")
             return []
 
-    def search(self, query, top_n=3):
+    def _write_db(self, data: List[Dict[str, Any]]):
+        """Writes the dataset back to disk."""
+        try:
+            with open(self.db_path, 'w') as f:
+                json.dump(data, f, indent=4)
+        except Exception as e:
+            logger.error(f"Error writing KEDB: {str(e)}")
+
+    def search(self, query: str) -> List[Dict[str, Any]]:
         """
-        A rudimentary search that looks for query tokens in the KEDB incidents.
-        Since it's a mock, we just return up to top_n incidents that match some keywords, or fallback to the first top_n.
+        Performs a simple keyword-based search across the local KEDB.
+        
+        Args:
+            query: The raw input incident text.
+            
+        Returns:
+            A list of matching KEDB entries.
         """
-        if not self.incidents:
-            return []
+        logger.info(f"Scanning Local KEDB for matches to: {query[:30]}...")
+        db = self._read_db()
+        results = []
         
-        query_terms = set(query.lower().split())
-        scored_incidents = []
+        query_words = set(query.lower().split())
         
-        for inc in self.incidents:
-            score = 0
-            # Check issue and root cause
-            text_to_search = (inc.get("issue", "") + " " + inc.get("root_cause", "")).lower()
-            tags = [t.lower() for t in inc.get("tags", [])]
-            
-            for term in query_terms:
-                if len(term) > 3 and term in text_to_search:
-                    score += 1
-                if term in tags:
-                    score += 2
-            
-            # Map attributes to standard format required by LLM
-            formatted_inc = {
-                "source": "LOCAL KEDB",
-                "issue": inc.get("issue", ""),
-                "root_cause": inc.get("root_cause", ""),
-                "resolution": inc.get("resolution", ""),
-                "relevance": score # Keep score to sort
-            }
-            scored_incidents.append(formatted_inc)
-            
-        # Sort by highest score
-        scored_incidents.sort(key=lambda x: x["relevance"], reverse=True)
+        for entry in db:
+            issue_words = set(entry.get("issue", "").lower().split())
+            # Match if there's any intersection of non-trivial words
+            if query_words.intersection(issue_words):
+                results.append({
+                    "issue": entry.get("issue"),
+                    "root_cause": entry.get("root_cause"),
+                    "resolution": entry.get("resolution"),
+                    "source": "KEDB",
+                    "relevance": 1.0  # Local matches are treated as exact/gold standard
+                })
         
-        # If no hits, just return the first few
-        if scored_incidents[0]["relevance"] == 0:
-            return scored_incidents[:top_n]
-            
-        return scored_incidents[:top_n]
+        return results
