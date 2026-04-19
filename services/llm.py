@@ -70,10 +70,11 @@ class LLMService:
                 response_format={"type": "json_object"}
             )
             raw_response = chat_completion.choices[0].message.content
+            print(f"DEBUG: Raw LLM Response: {raw_response}")
             return json.loads(raw_response)
         except Exception as e:
             print(f"LLM Error: {e}")
-            return {"error": "Failed to analyze incident."}
+            return {"error": f"LLM Error: {str(e)}"}
 
     def evaluate_incident_for_kedb(self, feedback_payload, similar_incidents=None):
         context = ""
