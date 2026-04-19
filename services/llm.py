@@ -202,3 +202,123 @@ class LLMService:
         except Exception as e:
             print(f"LLM KEDB Error: {e}")
             return {"action": "REJECT", "reason": "LLM evaluation failed."}
+
+    def analyze_fallback(self, incident, similar_incidents=None):
+        """
+        LLM_FALLBACK mode: Provides structured reasoning when no strong matches exist.
+        """
+        weak_matches = []
+        if similar_incidents:
+            for inc in similar_incidents:
+                weak_matches.append({
+                    "summary": inc.get("issue", "Unknown"),
+                    "similarity": inc.get("relevance", 0)
+                })
+
+        input_payload = {
+            "incident": incident,
+            "weak_matches": weak_matches
+        }
+
+        prompt = f"""
+        You are an AI Incident Response Assistant operating in FALLBACK MODE.
+        No strong matches were found in KEDB or Vector DB.
+        However, weak contextual matches (if provided) may still contain useful signals.
+
+        Your job is to provide a structured, realistic, and cautious analysis AND prepare the incident for vector database storage.
+
+        ---
+        INPUT:
+        {json.dumps(input_payload, indent=2)}
+
+        ---
+        TASK:
+        1. Normalize the incident into a clear technical summary.
+        2. Identify 2–4 POSSIBLE root causes:
+        * Rank by likelihood
+        * Avoid certainty
+        3. Generate step-by-step resolution:
+        * Start with safest steps
+        * Include validation steps
+        * Avoid destructive actions
+        4. Assign:
+        * severity (LOW | MEDIUM | HIGH)
+        * complexity (EASY | MEDIUM | HARD)
+        5. Generate confidence score based on clarity + signals (0-100)
+
+        ---
+        LEARNING DECISION:
+        Set "needs_learning" = true ONLY IF:
+        * incident is clear
+        * resolution is meaningful
+        * not vague or generic
+
+        ---
+        STEP 6 — VECTOR DB PREPARATION:
+        IF needs_learning == true:
+        Create embedding-ready document:
+        "Incident: <incident_summary>. Root Cause: <top cause>. Resolution: <resolution summary>. Severity: <severity>. Tags: <tags>."
+
+        Also generate metadata:
+        {{
+        "severity": "<severity>",
+        "complexity": "<complexity>",
+        "source": "llm_fallback",
+        "confidence": <confidence_score>
+        }}
+
+        ---
+        OUTPUT FORMAT (STRICT JSON):
+        {{
+        "source": "LLM_FALLBACK",
+        "incident_summary": "<clean normalized version>",
+        "possible_root_causes": [
+        {{
+            "cause": "<text>",
+            "likelihood": "HIGH | MEDIUM | LOW"
+        }}
+        ],
+        "recommended_resolution": [
+        "<step 1>",
+        "<step 2>"
+        ],
+        "validation_steps": [
+        "<how to confirm fix>"
+        ],
+        "severity": "<LOW | MEDIUM | HIGH>",
+        "complexity": "<EASY | MEDIUM | HARD>",
+        "confidence_score": <0-100>,
+        "needs_learning": <true|false>,
+        "vector_db_entry": {{
+        "document": "<embedding-ready text>",
+        "metadata": {{
+            "severity": "<severity>",
+            "complexity": "<complexity>",
+            "source": "llm_fallback",
+            "confidence": <confidence_score>
+        }}
+        }}
+        }}
+
+        ---
+        IMPORTANT RULES:
+        * DO NOT directly store anything
+        * Only prepare data for storage
+        * If needs_learning == false → set vector_db_entry = null
+        * Keep embedding text natural and complete
+        * Output ONLY valid JSON
+        """
+
+        try:
+            chat_completion = self.client.chat.completions.create(
+                messages=[{"role": "user", "content": prompt}],
+                model=self.model,
+                temperature=0.1,
+                response_format={"type": "json_object"}
+            )
+            raw_response = chat_completion.choices[0].message.content
+            print(f"DEBUG: Fallback Raw LLM Response: {raw_response}")
+            return json.loads(raw_response)
+        except Exception as e:
+            print(f"LLM Fallback Error: {e}")
+            return {"error": f"Fallback mode failed: {str(e)}"}

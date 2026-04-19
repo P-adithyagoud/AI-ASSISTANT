@@ -59,9 +59,38 @@ class IncidentCommander:
             }
             return recovery_plan, is_fallback
             
-        # 4. ELSE: Analyze with LLM. Pass all available cases.
-        recovery_plan = self.llm.analyze_incident(raw_logs, all_cases)
+        # 4. ELSE: Analyze with dedicated Fallback Mode or Standard Analyze
+        if strong_match:
+            # We already returned above if strong_match existed
+            pass
+            
+        # Call Fallback Mode if no strong matches were found
+        raw_fallback = self.llm.analyze_fallback(raw_logs, all_cases)
         
+        # MAP Fallback keys to UI-compatible keys for "Old Output" stability
+        if isinstance(raw_fallback, dict) and "error" not in raw_fallback:
+            # Join possible causes into a single string for UI compatibility
+            causes = [f"{c['cause']} ({c['likelihood']} likelihood)" for c in raw_fallback.get("possible_root_causes", [])]
+            root_cause_str = " | ".join(causes) if causes else "Unknown"
+            
+            recovery_plan = {
+                "summary": raw_fallback.get("incident_summary"),
+                "root_cause": root_cause_str,
+                "resolution_steps": raw_fallback.get("recommended_resolution", []),
+                "validation_steps": raw_fallback.get("validation_steps", []),
+                "severity": raw_fallback.get("severity", "MEDIUM"),
+                "complexity": raw_fallback.get("complexity", "medium"),
+                "confidence": f"{raw_fallback.get('confidence_score', 0)}%",
+                "mode": "fallback",
+                "preventive_measures": ["Review system for similar future occurrences"],
+                "immediate_actions": [{"priority": "medium", "owner": "SRE", "step": "Monitor and Verify Fallback fix"}],
+                # Pass learning metadata through for future tracking
+                "needs_learning": raw_fallback.get("needs_learning", False),
+                "vector_db_entry": raw_fallback.get("vector_db_entry")
+            }
+        else:
+            recovery_plan = raw_fallback
+
         # PARSE LLM response and handle Vector DB results mapping
         if isinstance(recovery_plan, dict) and "error" not in recovery_plan:
             # Restore manual injection to ensure "old" stable output format for UI
