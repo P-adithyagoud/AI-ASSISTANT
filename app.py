@@ -65,28 +65,53 @@ class IncidentCommander:
         # PARSE LLM response and handle Vector DB results mapping
         if isinstance(recovery_plan, dict) and "error" not in recovery_plan:
             # We no longer hardcode similar_incidents here; the LLM selects the top 3 and outputs them.
-
-            # CALL store_incident() before returning
-            issue_summary = recovery_plan.get("summary", "Unknown Issue")
-            root_cause = recovery_plan.get("root_cause", "Unknown Root Cause")
-            
-            # Combine resolution steps into a single string for storage
-            res_steps = recovery_plan.get("resolution_steps", [])
-            resolution = " ".join(res_steps) if isinstance(res_steps, list) else str(res_steps)
-            
-            severity = recovery_plan.get("severity", "SEV3")
-            tags = ["incident", severity.lower()]
-            
-            self.vdb.store_incident(
-                embedding=query,
-                issue=issue_summary,
-                root_cause=root_cause,
-                resolution=resolution,
-                severity=severity,
-                tags=tags
-            )
+            # KEDB Learning Engine: Auto-storage has been deliberately removed.
+            # Resolved incidents must be submitted via /feedback to be safely ingested.
+            pass
 
         return recovery_plan, is_fallback
+
+    def submit_feedback(self, feedback_payload):
+        raw_issue = feedback_payload.get("incident", "")
+        if not raw_issue:
+            return {"action": "REJECT", "reason": "No incident description provided."}
+            
+        query = self.embed.normalize_text(raw_issue)
+        vdb_cases = self.vdb.recall_similar(query)
+        for case in vdb_cases:
+            case["source"] = "VECTOR DB"
+        kedb_cases = self.kedb.search(raw_issue)
+        all_cases = vdb_cases + kedb_cases
+        
+        decision = self.llm.evaluate_incident_for_kedb(feedback_payload, all_cases)
+        print(f"KEDB Engine Decision: {decision}")
+        
+        action = decision.get("action")
+        if action == "STORE":
+            entry = decision.get("entry", {})
+            self.vdb.store_incident(
+                embedding=query,
+                issue=entry.get("issue", raw_issue),
+                root_cause=entry.get("root_cause", "Unknown"),
+                resolution=entry.get("resolution", "Unknown"),
+                severity=entry.get("severity", "MEDIUM"),
+                tags=entry.get("tags", [])
+            )
+        elif action == "UPDATE":
+            updates = decision.get("updates", {})
+            # Since Hindsight retains via semantics, we store the updated version
+            res_steps = feedback_payload.get("resolution_steps", "Updated Resolution")
+            res_str = " ".join(res_steps) if isinstance(res_steps, list) else str(res_steps)
+            self.vdb.store_incident(
+                embedding=query,
+                issue=raw_issue,
+                root_cause=feedback_payload.get("root_cause", "Updated Issue"),
+                resolution=updates.get("resolution", res_str),
+                severity=feedback_payload.get("severity", "MEDIUM"),
+                tags=updates.get("tags", [])
+            )
+            
+        return decision
 
 commander = IncidentCommander()
 
@@ -103,6 +128,19 @@ def analyze():
         
         result_data, is_fallback = commander.analyze(data['incident'])
         return jsonify({"success": True, "data": result_data, "fallback": is_fallback})
+
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/feedback', methods=['POST'])
+def feedback():
+    try:
+        data = request.get_json()
+        if not data or 'incident' not in data:
+            return jsonify({"success": False, "error": "No incident data provided"}), 400
+            
+        decision = commander.submit_feedback(data)
+        return jsonify({"success": True, "data": decision})
 
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500

@@ -88,3 +88,130 @@ class LLMService:
         except Exception as e:
             print(f"LLM Error: {e}")
             return {"error": "Failed to analyze incident."}
+
+    def evaluate_incident_for_kedb(self, feedback_payload, similar_incidents=None):
+        context = ""
+        if similar_incidents:
+            context = "\n### existing_kedb_matches:\n"
+            for i, inc in enumerate(similar_incidents):
+                source = inc.get('source', 'Unknown')
+                context += f"Match {i+1} [{source}]:\n"
+                context += f"Issue: {inc.get('issue')}\n"
+                context += f"Root Cause: {inc.get('root_cause', 'Unknown')}\n"
+                context += f"Resolution/Context: {inc.get('resolution')}\n\n"
+
+        payload_str = json.dumps(feedback_payload, indent=2)
+
+        prompt = f"""
+        You are a production-grade Known Error Database (KEDB) learning engine for an AI Incident Response Assistant.
+        Your job is to intelligently decide whether to:
+        1. STORE a new known error
+        2. UPDATE an existing known error
+        3. REJECT storing
+
+        CONTEXT:
+        The system receives resolved incidents over time.
+        It must learn only HIGH-VALUE, REUSABLE, and STABLE patterns.
+        Avoid noise. Avoid duplicates. Prioritize reliability.
+
+        ---
+        INPUT INCIDENT (JSON DUMP):
+        {payload_str}
+
+        {context}
+
+        ---
+        DECISION ENGINE (STRICT LOGIC):
+        STEP 1 — HARD FILTER:
+        REJECT if ANY:
+        * resolution_success == false
+        * resolution_type != "permanent"
+        * similarity_score < 0.75 AND severity != "HIGH"
+        * incident is vague or lacks technical clarity
+
+        STEP 2 — SEVERITY-AWARE GATING:
+        ALLOW consideration IF:
+        * repeat_count >= 3
+          OR
+        * severity == "HIGH" AND repeat_count >= 1
+
+        STEP 3 — DEDUPLICATION & UPDATE LOGIC:
+        IF existing_kedb_matches is NOT empty:
+        * Find best match (highest similarity)
+        IF best_match.similarity >= 0.85:
+        → DO NOT create new entry
+        → UPDATE existing entry
+        Update rules:
+        * Increase confidence level
+        * Merge tags (no duplicates)
+        * Improve resolution clarity if new one is better
+        * Keep most accurate root cause
+
+        STEP 4 — NEW ENTRY CREATION:
+        IF no strong match:
+        Normalize incident into reusable pattern:
+        * remove user-specific noise
+        * keep system + failure + symptom keywords
+        * make it generic and reusable
+
+        STEP 5 — CONFIDENCE SCORING:
+        Assign confidence:
+        HIGH: repeat_count >= 5 OR (repeat_count >= 3 AND similarity_score >= 0.9)
+        MEDIUM: repeat_count 3–4
+        LOW: repeat_count < 3 AND severity == HIGH
+
+        ---
+        STEP 6 — OUTPUT
+
+        You must return a valid JSON object matching ONE of these formats exactly:
+
+        CASE A: STORE NEW
+        {{
+        "action": "STORE",
+        "entry": {{
+            "issue": "<clean generalized incident>",
+            "root_cause": "<clear root cause>",
+            "resolution": "<step-by-step permanent resolution>",
+            "severity": "<severity>",
+            "tags": ["..."],
+            "confidence": "<LOW|MEDIUM|HIGH>"
+        }}
+        }}
+
+        CASE B: UPDATE EXISTING
+        {{
+        "action": "UPDATE",
+        "target_id": "<existing_kedb_id>",
+        "updates": {{
+            "confidence": "<updated>",
+            "tags": ["merged"],
+            "resolution": "<improved if applicable>"
+        }}
+        }}
+
+        CASE C: REJECT
+        {{
+        "action": "REJECT",
+        "reason": "<clear reason>"
+        }}
+
+        IMPORTANT RULES:
+        * NEVER create duplicate entries
+        * ALWAYS prefer updating over inserting
+        * ONLY store stable, reusable knowledge
+        * DO NOT store temporary fixes (like restart/redeploy)
+        * OUTPUT must be strict JSON only.
+        """
+
+        try:
+            chat_completion = self.client.chat.completions.create(
+                messages=[{"role": "user", "content": prompt}],
+                model=self.model,
+                temperature=0.1,
+                response_format={"type": "json_object"}
+            )
+            raw_response = chat_completion.choices[0].message.content
+            return json.loads(raw_response)
+        except Exception as e:
+            print(f"LLM KEDB Error: {e}")
+            return {"action": "REJECT", "reason": "LLM evaluation failed."}
