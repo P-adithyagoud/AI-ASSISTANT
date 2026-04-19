@@ -140,6 +140,10 @@ def analyze():
             return jsonify({"success": False, "error": "No incident data provided"}), 400
         
         result_data, is_fallback = commander.analyze(data['incident'])
+        
+        if isinstance(result_data, dict) and "error" in result_data:
+            return jsonify({"success": False, "error": result_data["error"]}), 500
+            
         return jsonify({"success": True, "data": result_data, "fallback": is_fallback})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
