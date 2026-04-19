@@ -1,0 +1,42 @@
+[
+  {
+    "id": "KEDB-001",
+    "issue": "Database connection timeout errors during traffic spike",
+    "root_cause": "Database connection pool exhausted due to insufficient idle connections being kept alive.",
+    "resolution": "Increased minimum connection pool size and configured max_connections to 200 in PostgreSQL config.",
+    "severity": "HIGH",
+    "tags": ["database", "postgres", "pool", "timeout"]
+  },
+  {
+    "id": "KEDB-002",
+    "issue": "API Gateway responding with 502 Bad Gateway",
+    "root_cause": "Nginx proxy timeout resolving backend upstream containers that were scaling out.",
+    "resolution": "Increased proxy_read_timeout to 60s and implemented a readiness probe delay.",
+    "severity": "HIGH",
+    "tags": ["api", "gateway", "502", "nginx"]
+  },
+  {
+    "id": "KEDB-003",
+    "issue": "High memory consumption on Node.js auth service",
+    "root_cause": "Memory leak caused by unhandled event listeners in the JWT signing library.",
+    "resolution": "Patched the JWT library to the latest stable version and implemented standard cleanup for event listeners.",
+    "severity": "MEDIUM",
+    "tags": ["nodejs", "auth", "memory-leak", "jwt"]
+  },
+  {
+    "id": "KEDB-004",
+    "issue": "Frontend assets failing to load with 404",
+    "root_cause": "CDN edge locations caching an old deployment manifest preventing new asset resolutions.",
+    "resolution": "Triggered a hard cache invalidation across all CDN edge nodes and updated CI to append hash to filenames.",
+    "severity": "MEDIUM",
+    "tags": ["frontend", "cdn", "cache", "404"]
+  },
+  {
+    "id": "KEDB-005",
+    "issue": "Redis cache stampede causing DB overload",
+    "root_cause": "Multiple concurrent workers attempting to regenerate the same expired cache key simultaneously.",
+    "resolution": "Implemented a mutex lock for cache regeneration and added staggered cache expiration times.",
+    "severity": "HIGH",
+    "tags": ["redis", "cache", "database", "stampede"]
+  }
+]

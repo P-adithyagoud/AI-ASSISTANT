@@ -7,20 +7,32 @@ app = Flask(__name__)
 
 from services.vector_db import VectorDBService
 from services.embedding import EmbeddingService
+from services.kedb import LocalKEDBService
 
 class IncidentCommander:
     def __init__(self):
         self.llm = LLMService()
         self.vdb = VectorDBService()
         self.embed = EmbeddingService()
+        self.kedb = LocalKEDBService()
 
     def analyze(self, raw_logs):
         # 1. Normalize query (Embedding)
         query = self.embed.normalize_text(raw_logs)
         
-        # 2. Try fetching similar cases
+        # 2. Try fetching similar cases from Vector DB and KEDB
         similar_cases = self.vdb.recall_similar(query)
-        is_fallback = len(similar_cases) == 0
+        
+        # We ensure vector DB incidents are marked before merging
+        for case in similar_cases:
+            case["source"] = "VECTOR DB"
+            
+        kedb_cases = self.kedb.search(raw_logs)
+        all_cases = similar_cases + kedb_cases  # Put VDB first
+        
+        print(f"DEBUG: Retrieved {len(kedb_cases)} from KEDB and {len(similar_cases)} from VDB.")
+        
+        is_fallback = len(all_cases) == 0
         
         # 3. IF strong match exists (score >= 0.85):
         strong_match = None
@@ -47,23 +59,12 @@ class IncidentCommander:
             }
             return recovery_plan, is_fallback
             
-        # 4. ELSE: Analyze with LLM
-        recovery_plan = self.llm.analyze_incident(raw_logs, similar_cases)
+        # 4. ELSE: Analyze with LLM. Pass all available cases.
+        recovery_plan = self.llm.analyze_incident(raw_logs, all_cases)
         
         # PARSE LLM response and handle Vector DB results mapping
         if isinstance(recovery_plan, dict) and "error" not in recovery_plan:
-            # Format the vector db output into what main.js expects
-            if similar_cases:
-                formatted_similars = []
-                for idx, inc in enumerate(similar_cases):
-                    formatted_similars.append({
-                        "is_primary_match": (idx == 0),
-                        "source": "LOCAL KEDB",
-                        "issue": inc.get("issue", "Historical Issue"),
-                        "root_cause": inc.get("root_cause", "Found in Vector Database"),
-                        "resolution": inc.get("resolution", "Refer to history.")
-                    })
-                recovery_plan["similar_incidents"] = formatted_similars
+            # We no longer hardcode similar_incidents here; the LLM selects the top 3 and outputs them.
 
             # CALL store_incident() before returning
             issue_summary = recovery_plan.get("summary", "Unknown Issue")
