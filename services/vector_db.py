@@ -40,12 +40,47 @@ class VectorDBService:
             
             parsed_results = []
             for item in results[:top_n]:
+                # In typical Hindsight SDK, item could be a dictionary or object. 
+                # Attempt to get metadata safely.
+                item_dict = item if isinstance(item, dict) else vars(item)
+                metadata = item_dict.get("metadata", {}) or {}
+                
                 parsed_results.append({
-                    "issue": item.get("content", ""),
-                    "relevance": item.get("relevance", 0),
-                    "resolution": item.get("resolution", "Refer to history.") # Just in case it has it natively
+                    "issue": item_dict.get("content", metadata.get("issue", "")),
+                    "relevance": item_dict.get("relevance", 0),
+                    "resolution": metadata.get("resolution", item_dict.get("resolution", "Refer to history.")),
+                    "root_cause": metadata.get("root_cause", ""),
+                    "severity": metadata.get("severity", ""),
+                    "tags": metadata.get("tags", [])
                 })
             return parsed_results
         except Exception as e:
             print(f"Error recalling memory from Vector DB: {str(e)}. Falling back.")
             return []
+
+    def store_incident(self, embedding, issue, root_cause, resolution, severity, tags):
+        """
+        Stores a newly generated incident into the Vector DB.
+        """
+        if not self.client:
+            print("Vector DB client not initialized. Cannot store.")
+            return
+
+        print("Storing incident...")
+        try:
+            metadata = {
+                "issue": str(issue),
+                "root_cause": str(root_cause),
+                "resolution": str(resolution),
+                "severity": str(severity)
+            }
+            # Execute store via retain method in Hindsight
+            response = self.client.retain(
+                bank_id=self.bank_id,
+                content=str(embedding),
+                metadata=metadata,
+                tags=list(tags)
+            )
+            print(f"Vector DB Response (Store): {response}")
+        except Exception as e:
+            print(f"Error storing incident in Vector DB: {e}")
