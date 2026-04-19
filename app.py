@@ -80,6 +80,7 @@ class IncidentCommander:
                 "validation_steps": raw_fallback.get("validation_steps", []),
                 "severity": raw_fallback.get("severity", "MEDIUM"),
                 "complexity": raw_fallback.get("complexity", "medium"),
+                "primary_owner": raw_fallback.get("recommended_owner", "DevOps"),
                 "confidence": f"{raw_fallback.get('confidence_score', 0)}%",
                 "mode": "fallback",
                 "preventive_measures": ["Review system for similar future occurrences"],

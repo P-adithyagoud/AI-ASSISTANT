@@ -38,6 +38,7 @@ class LLMService:
             "complexity": "easy, medium, or hard",
             "mode": "full or partial",
             "confidence": "Low, Medium, or High",
+            "primary_owner": "Frontend | Backend | DevOps | Security",
             "summary": "Brief 1-sentence summary of the incident",
             "root_cause": "Detailed explanation of the root cause",
             "immediate_actions": [
@@ -287,6 +288,7 @@ class LLMService:
         ],
         "severity": "<LOW | MEDIUM | HIGH>",
         "complexity": "<EASY | MEDIUM | HARD>",
+        "recommended_owner": "Frontend | Backend | DevOps | Security",
         "confidence_score": <0-100>,
         "needs_learning": <true|false>,
         "vector_db_entry": {{

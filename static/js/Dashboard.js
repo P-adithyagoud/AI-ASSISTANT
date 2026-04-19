@@ -260,6 +260,13 @@ const ResultsPanel = ({ data, loading }) => {
                                 </div>
                             </div>
 
+                            <div className="p-4 rounded-2xl bg-brand-primary/10 border border-brand-primary/20 flex items-center justify-between">
+                                <div className="text-sm font-medium text-slate-300">Suggested Responder</div>
+                                <span className="text-xs font-bold text-brand-primary flex items-center gap-2">
+                                    <i className="fas fa-user-tag"></i> {data.primary_owner || 'DEVOPS / SRE'}
+                                </span>
+                            </div>
+
                             <div className="p-4 rounded-2xl bg-brand-primary/5 border border-brand-primary/10 flex items-center justify-between">
                                 <div className="text-sm font-medium text-slate-300">Learning Status</div>
                                 {data.source === 'KEDB' ? (
