@@ -56,22 +56,8 @@ class LLMService:
             ],
             "preventive_measures": [
                 "Preventative measure 1"
-            ],
-            "similar_incidents": [
-                {{
-                    "is_primary_match": true,
-                    "source": "Source string EXACTLY as provided (e.g. LOCAL KEDB or VECTOR DB)",
-                    "issue": "Historical issue text",
-                    "root_cause": "Historical root cause",
-                    "resolution": "Historical resolution"
-                }}
             ]
         }}
-        
-        IMPORTANT RULES FOR `similar_incidents`:
-        - Out of the incidents provided in the Historical Context (which contains items tagged as VECTOR DB and/or LOCAL KEDB), you MUST select exactly the BEST 3 most relevant incidents.
-        - You MUST include a mix of sources if possible! Try to include at least 1 incident with "source": "VECTOR DB" and 1 incident with "source": "LOCAL KEDB".
-        - Do not hallucinate sources. Use the exact "Source: XYZ" provided in the prompt brackets.
         
         Do not output any markdown code blocks (e.g. ```json), just raw JSON.
         """

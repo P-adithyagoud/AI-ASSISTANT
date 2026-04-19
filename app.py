@@ -64,7 +64,20 @@ class IncidentCommander:
         
         # PARSE LLM response and handle Vector DB results mapping
         if isinstance(recovery_plan, dict) and "error" not in recovery_plan:
-            # We no longer hardcode similar_incidents here; the LLM selects the top 3 and outputs them.
+            # Restore manual injection to ensure "old" stable output format for UI
+            if all_cases:
+                formatted_similars = []
+                # Take top 3 total from the merged results
+                for idx, inc in enumerate(all_cases[:3]):
+                    formatted_similars.append({
+                        "is_primary_match": (idx == 0),
+                        "source": inc.get("source", "KEDB"),
+                        "issue": inc.get("issue", "Historical Issue"),
+                        "root_cause": inc.get("root_cause", "Found in Database"),
+                        "resolution": inc.get("resolution", "Refer to history.")
+                    })
+                recovery_plan["similar_incidents"] = formatted_similars
+            
             # KEDB Learning Engine: Auto-storage has been deliberately removed.
             # Resolved incidents must be submitted via /feedback to be safely ingested.
             pass
@@ -128,7 +141,6 @@ def analyze():
         
         result_data, is_fallback = commander.analyze(data['incident'])
         return jsonify({"success": True, "data": result_data, "fallback": is_fallback})
-
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
@@ -141,7 +153,6 @@ def feedback():
             
         decision = commander.submit_feedback(data)
         return jsonify({"success": True, "data": decision})
-
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
