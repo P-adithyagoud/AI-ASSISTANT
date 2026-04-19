@@ -357,6 +357,28 @@ const App = () => {
     const [feedbackLoading, setFeedbackLoading] = useState(false);
     const [feedbackSuccess, setFeedbackSuccess] = useState(null);
 
+    const fileInputRef = useRef(null);
+
+    const handleFileUpload = (event) => {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        // Visual feedback
+        setLoading(true);
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const content = e.target.result;
+            setIncidentText(content);
+            setLoading(false);
+        };
+        reader.onerror = () => {
+             setError("Failed to read file.");
+             setLoading(false);
+        };
+        reader.readAsText(file);
+    };
+
     const handleAnalyze = async () => {
         if (!incidentText.trim()) return;
         
@@ -438,9 +460,19 @@ const App = () => {
                                     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) handleAnalyze();
                                 }}
                             />
+                            <input 
+                                type="file" 
+                                ref={fileInputRef} 
+                                className="hidden" 
+                                onChange={handleFileUpload}
+                                accept=".txt,.log,.json,.csv"
+                            />
                             <div className="flex items-center justify-between mt-4">
                                 <div className="flex gap-2">
-                                     <button className="px-3 py-1.5 rounded-lg bg-slate-800 text-[10px] font-bold text-slate-400 hover:text-white transition-colors border border-white/5">
+                                     <button 
+                                        className="px-3 py-1.5 rounded-lg bg-slate-800 text-[10px] font-bold text-slate-400 hover:text-white transition-colors border border-white/5"
+                                        onClick={() => fileInputRef.current.click()}
+                                    >
                                         <i className="fas fa-file-upload mr-2"></i> ATTACH LOGS
                                     </button>
                                      <button className="px-3 py-1.5 rounded-lg bg-slate-800 text-[10px] font-bold text-slate-400 hover:text-white transition-colors border border-white/5"
